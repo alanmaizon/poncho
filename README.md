@@ -1,24 +1,62 @@
-Poncho - 3D Model Display
+# Poncho — 3D Driving Prototype
 
-- Scene Setup:
-Initializes the scene, camera, and renderer.
+A lightweight browser-based 3D driving prototype built with Three.js, TypeScript, and Vite.
 
-- Lighting:
-Adds ambient, directional, and hemisphere lights to illuminate the model.
+## Quick Start
 
-- Model Loading: 
-Uses THREE.GLTFLoader to load the GLB file (source/Porsche.glb). 
-The loader will automatically handle the textures embedded in the GLB.
+```bash
+npm install
+npm run dev
+```
 
-- Animation Loop: 
-Continuously renders the scene using requestAnimationFrame.
+Opens at `http://localhost:5173`.
 
-- Responsive Design: 
-Adjusts the renderer size when the window is resized.
+## Controls
 
-- Bounding Box Calculation:
-After loading the model, a bounding box is calculated using THREE.Box3().setFromObject(model).
+| Key | Action |
+|---|---|
+| W / ↑ | Accelerate forward |
+| S / ↓ | Reverse |
+| A / ← | Steer left |
+| D / → | Steer right |
+| Space | Brake |
 
-- Position Adjustment: 
-The model's position is adjusted based on the bounding box's center and size to ensure its base aligns with the grid. 
-The Y position of the model is set to ensure its bottom aligns with Y=0 (ground level).
+## Asset Paths
+
+Place your models in the `public/` folder:
+
+```
+public/
+  assets/
+    models/
+      racetrack_proto.fbx   ← FBX racetrack environment
+      car.glb               ← GLB player car
+```
+
+## Project Structure
+
+```
+src/
+  main.ts       — App bootstrap and game loop
+  scene.ts      — Renderer, lighting, ground plane
+  assets.ts     — FBX/GLTF asset loading and normalization
+  input.ts      — Keyboard state tracker
+  car.ts        — Arcade car physics controller
+  camera.ts     — Third-person follow camera
+  boundary.ts   — Circular boundary constraint
+  hud.ts        — Debug HUD (speed, position, heading)
+```
+
+## Build
+
+```bash
+npm run build     # Type-check + production build → dist/
+npm run preview   # Serve the built output locally
+```
+
+## Notes
+
+- The FBX track is auto-scaled to ~200 units across and centered at origin.
+- The GLB car is auto-scaled to ~4 units long.
+- Boundary is a circular constraint derived from the track's bounding box. Replace with mesh collision for tighter bounds.
+- Car physics are pure arcade — no rigid body simulation. Tweak constants in `src/car.ts`.
