@@ -1,6 +1,9 @@
 import { defineConfig } from 'vite';
 
-export default defineConfig({
+const REPO_BASE = '/poncho/';
+
+export default defineConfig(({ command }) => ({
+  base: command === 'serve' ? '/' : REPO_BASE,
   root: '.',
   publicDir: 'public',
   server: {
@@ -9,4 +12,4 @@ export default defineConfig({
   build: {
     outDir: 'dist',
   },
-});
+}));

@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
-const TRACK_PATH = '/assets/models/racetrack_figure8.glb';
-const CAR_PATH = '/assets/models/car.glb';
+const withBase = (path: string) => `${import.meta.env.BASE_URL}${path}`;
+
+const TRACK_PATH = withBase('assets/models/racetrack_figure8.glb');
+const CAR_PATH = withBase('assets/models/car.glb');
 const TERRAIN_MARGIN = 180;
 const TERRAIN_SEGMENTS_X = 140;
 const TERRAIN_SEGMENTS_Z = 120;
