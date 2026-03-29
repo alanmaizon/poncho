@@ -2,7 +2,6 @@ import { initRenderer } from './scene';
 import { loadAssets } from './assets';
 import { CarController } from './car';
 import { CameraController } from './camera';
-import { updateHud } from './hud';
 import { BoundarySystem } from './boundary';
 import * as THREE from 'three';
 
@@ -25,9 +24,7 @@ async function main() {
 
     carController.update(dt);
     boundary.constrain(carController);
-    carController.sampleSpeed(dt);
     cameraController.update(dt);
-    updateHud(carController);
 
     // Keep shadow camera centered on the car
     sun.target.position.copy(car.position);

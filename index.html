@@ -8,27 +8,48 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
     canvas { display: block; }
-    #hud {
+    #brand-badge {
       position: fixed;
       top: 16px;
       left: 16px;
-      min-width: 3.8ch;
-      color: #a7ff5a;
-      font-family: 'Courier New', monospace;
-      font-size: clamp(44px, 6vw, 72px);
-      font-weight: 700;
-      line-height: 0.9;
-      letter-spacing: 0.08em;
-      text-align: right;
-      font-variant-numeric: tabular-nums;
-      background: rgba(4, 10, 18, 0.52);
-      border: 1px solid rgba(167, 255, 90, 0.2);
-      box-shadow: 0 0 24px rgba(38, 255, 94, 0.14);
-      text-shadow: 0 0 18px rgba(118, 255, 61, 0.35);
-      padding: 10px 14px 8px;
-      border-radius: 10px;
+      display: grid;
+      gap: 4px;
+      min-width: min(320px, calc(100vw - 32px));
+      padding: 12px 16px 14px;
+      color: #f3f7ff;
+      background:
+        radial-gradient(circle at top right, rgba(104, 213, 255, 0.18), transparent 38%),
+        linear-gradient(135deg, rgba(6, 10, 20, 0.9), rgba(12, 18, 32, 0.72));
+      border: 1px solid rgba(124, 204, 255, 0.24);
+      border-radius: 14px;
+      box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
+      backdrop-filter: blur(10px);
       pointer-events: none;
       z-index: 10;
+    }
+    #brand-kicker {
+      color: #8ed8ff;
+      font-family: 'Trebuchet MS', 'Avenir Next', sans-serif;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.34em;
+      text-transform: uppercase;
+    }
+    #brand-title {
+      font-family: 'Trebuchet MS', 'Avenir Next', sans-serif;
+      font-size: clamp(24px, 3.8vw, 34px);
+      font-weight: 700;
+      line-height: 0.95;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      text-shadow: 0 0 22px rgba(84, 194, 255, 0.18);
+    }
+    #brand-subtitle {
+      color: rgba(243, 247, 255, 0.76);
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
     }
     #controls-hint {
       position: fixed;
@@ -47,7 +68,11 @@
   </style>
 </head>
 <body>
-  <div id="hud"></div>
+  <div id="brand-badge">
+    <div id="brand-kicker">Space Circuit</div>
+    <div id="brand-title">Milky Way Track</div>
+    <div id="brand-subtitle">Orbital Figure-8</div>
+  </div>
   <div id="controls-hint">W/↑ Forward · S/↓ Reverse · A/↓ Steer Left · D/→ Steer Right · Space Brake</div>
   <script type="module" src="/src/main.ts"></script>
 </body>
