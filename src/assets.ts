@@ -376,7 +376,8 @@ function isEnvironmentNode(name: string) {
     name === 'Ground' ||
     /^Tree_\d+/.test(name) ||
     /^Forest_\d+/.test(name) ||
-    /^Bush_\d+/.test(name)
+    /^Bush_\d+/.test(name) ||
+    /^BridgeSupport_/.test(name)
   );
 }
 
