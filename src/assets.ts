@@ -77,21 +77,16 @@ function loadTrack(): Promise<TrackObjects> {
 
         const extracted = extractTrackObjects(track);
         setSpaceTrackPresentation(track);
-        addSpaceTrackFx(
-          track,
-          extracted.roadMesh,
-          extracted.checkpoints,
-          extracted.startLine
-        );
+        addSpaceTrackFx(track, extracted.roadMesh, extracted.startLine);
 
         // Walls: invisible collision geometry
         for (const wall of extracted.walls) {
           wall.visible = false;
         }
 
-        // Checkpoints & StartLine now double as visible space-track markers.
+        // Keep checkpoints hidden; the start line remains the only visible marker.
         for (const cp of extracted.checkpoints) {
-          cp.visible = true;
+          cp.visible = false;
           cp.castShadow = false;
           cp.receiveShadow = false;
         }
@@ -195,15 +190,6 @@ function setSpaceTrackPresentation(track: THREE.Object3D) {
         material.color = new THREE.Color(0x1a2030);
         material.emissive = new THREE.Color(0x050a16);
         material.emissiveIntensity = 0.35;
-      } else if (child.name.startsWith('Checkpoint_')) {
-        material.color = new THREE.Color(0x79c7ff);
-        material.emissive = new THREE.Color(0x2fb8ff);
-        material.emissiveIntensity = 2.2;
-        material.transparent = true;
-        material.opacity = 0.2;
-        material.depthWrite = false;
-        material.roughness = 0.1;
-        material.metalness = 0.05;
       } else if (child.name === 'StartLine') {
         material.color = new THREE.Color(0xffd9f5);
         material.emissive = new THREE.Color(0xff3bbd);
@@ -221,7 +207,6 @@ function setSpaceTrackPresentation(track: THREE.Object3D) {
 function addSpaceTrackFx(
   track: THREE.Group,
   roadMesh: THREE.Mesh | null,
-  checkpoints: THREE.Mesh[],
   startLine: THREE.Mesh | null
 ) {
   if (roadMesh) {
@@ -231,9 +216,6 @@ function addSpaceTrackFx(
     }
   }
 
-  for (const checkpoint of checkpoints) {
-    checkpoint.renderOrder = 4;
-  }
   if (startLine) {
     startLine.renderOrder = 5;
   }
