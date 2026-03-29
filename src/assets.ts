@@ -77,18 +77,28 @@ function loadTrack(): Promise<TrackObjects> {
 
         const extracted = extractTrackObjects(track);
         setSpaceTrackPresentation(track);
+        addSpaceTrackFx(
+          track,
+          extracted.roadMesh,
+          extracted.checkpoints,
+          extracted.startLine
+        );
 
         // Walls: invisible collision geometry
         for (const wall of extracted.walls) {
           wall.visible = false;
         }
 
-        // Checkpoints & StartLine: invisible triggers
+        // Checkpoints & StartLine now double as visible space-track markers.
         for (const cp of extracted.checkpoints) {
-          cp.visible = false;
+          cp.visible = true;
+          cp.castShadow = false;
+          cp.receiveShadow = false;
         }
         if (extracted.startLine) {
-          extracted.startLine.visible = false;
+          extracted.startLine.visible = true;
+          extracted.startLine.castShadow = false;
+          extracted.startLine.receiveShadow = false;
         }
 
         resolve({ track, ...extracted });
@@ -172,6 +182,7 @@ function setSpaceTrackPresentation(track: THREE.Object3D) {
         material.roughness = 0.72;
         material.metalness = 0.22;
       } else if (child.name.startsWith('Curb')) {
+        material.color.offsetHSL(0, 0, 0.02);
         material.emissive = new THREE.Color(0x220812);
         material.emissiveIntensity = 0.28;
         material.roughness = 0.45;
@@ -184,9 +195,48 @@ function setSpaceTrackPresentation(track: THREE.Object3D) {
         material.color = new THREE.Color(0x1a2030);
         material.emissive = new THREE.Color(0x050a16);
         material.emissiveIntensity = 0.35;
+      } else if (child.name.startsWith('Checkpoint_')) {
+        material.color = new THREE.Color(0x79c7ff);
+        material.emissive = new THREE.Color(0x2fb8ff);
+        material.emissiveIntensity = 2.2;
+        material.transparent = true;
+        material.opacity = 0.2;
+        material.depthWrite = false;
+        material.roughness = 0.1;
+        material.metalness = 0.05;
+      } else if (child.name === 'StartLine') {
+        material.color = new THREE.Color(0xffd9f5);
+        material.emissive = new THREE.Color(0xff3bbd);
+        material.emissiveIntensity = 2.8;
+        material.transparent = true;
+        material.opacity = 0.9;
+        material.depthWrite = false;
+        material.roughness = 0.12;
+        material.metalness = 0.05;
       }
     }
   });
+}
+
+function addSpaceTrackFx(
+  track: THREE.Group,
+  roadMesh: THREE.Mesh | null,
+  checkpoints: THREE.Mesh[],
+  startLine: THREE.Mesh | null
+) {
+  if (roadMesh) {
+    const edgeLights = createEdgeLightRibbons(roadMesh);
+    for (const light of edgeLights) {
+      track.add(light);
+    }
+  }
+
+  for (const checkpoint of checkpoints) {
+    checkpoint.renderOrder = 4;
+  }
+  if (startLine) {
+    startLine.renderOrder = 5;
+  }
 }
 
 function computeSpawn(
@@ -245,24 +295,98 @@ function extractRoadCenterline(
   return centerline;
 }
 
-function estimateRoadHalfWidth(roadMesh: THREE.Mesh) {
+function createEdgeLightRibbons(roadMesh: THREE.Mesh) {
   const positions = roadMesh.geometry.getAttribute('position');
   if (!positions || positions.count < 4 || positions.count % 2 !== 0) {
-    return 7;
+    return [];
   }
 
   const halfCount = positions.count / 2;
+  const leftEdge: THREE.Vector3[] = [];
+  const rightEdge: THREE.Vector3[] = [];
   const left = new THREE.Vector3();
   const right = new THREE.Vector3();
-  let total = 0;
 
   for (let i = 0; i < halfCount; i++) {
     left.fromBufferAttribute(positions, i);
     right.fromBufferAttribute(positions, i + halfCount);
-    total += left.distanceTo(right) * 0.5;
+    leftEdge.push(left.clone());
+    rightEdge.push(right.clone());
   }
 
-  return total / halfCount;
+  return [
+    buildEdgeLightRibbon(leftEdge, 1, 0x47d7ff, 0x0cb8ff, 'EdgeLightLeft'),
+    buildEdgeLightRibbon(rightEdge, -1, 0xff5fcb, 0xff2d95, 'EdgeLightRight'),
+  ];
+}
+
+function buildEdgeLightRibbon(
+  edge: THREE.Vector3[],
+  sideSign: number,
+  colorHex: number,
+  emissiveHex: number,
+  name: string
+) {
+  const inner: THREE.Vector3[] = [];
+  const outer: THREE.Vector3[] = [];
+
+  for (let i = 0; i < edge.length; i++) {
+    const point = edge[i];
+    const tangent = edge[(i + 1) % edge.length]
+      .clone()
+      .sub(edge[(i - 1 + edge.length) % edge.length]);
+    tangent.y = 0;
+    tangent.normalize();
+
+    const leftNormal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+    const offset = leftNormal.multiplyScalar(sideSign);
+    const lift = new THREE.Vector3(0, 0.08, 0);
+    inner.push(point.clone().addScaledVector(offset, 0.05).add(lift));
+    outer.push(point.clone().addScaledVector(offset, 0.42).add(lift));
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  const verts = new Float32Array(edge.length * 2 * 3);
+  const indices: number[] = [];
+
+  for (let i = 0; i < edge.length; i++) {
+    const i6 = i * 6;
+    verts[i6] = inner[i].x;
+    verts[i6 + 1] = inner[i].y;
+    verts[i6 + 2] = inner[i].z;
+    verts[i6 + 3] = outer[i].x;
+    verts[i6 + 4] = outer[i].y;
+    verts[i6 + 5] = outer[i].z;
+  }
+
+  for (let i = 0; i < edge.length; i++) {
+    const a = i * 2;
+    const b = a + 1;
+    const c = ((i + 1) % edge.length) * 2;
+    const d = c + 1;
+    indices.push(a, b, d, a, d, c);
+  }
+
+  geometry.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+
+  const mesh = new THREE.Mesh(
+    geometry,
+    new THREE.MeshStandardMaterial({
+      color: colorHex,
+      emissive: emissiveHex,
+      emissiveIntensity: 2.4,
+      roughness: 0.18,
+      metalness: 0.08,
+      toneMapped: true,
+    })
+  );
+  mesh.name = name;
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  mesh.renderOrder = 3;
+  return mesh;
 }
 
 function isEnvironmentNode(name: string) {
