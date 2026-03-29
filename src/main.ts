@@ -25,6 +25,7 @@ async function main() {
 
     carController.update(dt);
     boundary.constrain(carController);
+    carController.sampleSpeed(dt);
     cameraController.update(dt);
     updateHud(carController);
 

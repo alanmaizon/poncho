@@ -10,18 +10,25 @@
     canvas { display: block; }
     #hud {
       position: fixed;
-      top: 12px;
-      left: 12px;
-      color: #0f0;
+      top: 16px;
+      left: 16px;
+      min-width: 3.8ch;
+      color: #a7ff5a;
       font-family: 'Courier New', monospace;
-      font-size: 13px;
-      line-height: 1.5;
-      background: rgba(0, 0, 0, 0.6);
-      padding: 8px 12px;
-      border-radius: 4px;
+      font-size: clamp(44px, 6vw, 72px);
+      font-weight: 700;
+      line-height: 0.9;
+      letter-spacing: 0.08em;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      background: rgba(4, 10, 18, 0.52);
+      border: 1px solid rgba(167, 255, 90, 0.2);
+      box-shadow: 0 0 24px rgba(38, 255, 94, 0.14);
+      text-shadow: 0 0 18px rgba(118, 255, 61, 0.35);
+      padding: 10px 14px 8px;
+      border-radius: 10px;
       pointer-events: none;
       z-index: 10;
-      white-space: pre;
     }
     #controls-hint {
       position: fixed;
@@ -38,7 +45,7 @@
       z-index: 10;
     }
   </style>
-  <script type="module" crossorigin src="/poncho/assets/index-dj1L8wwF.js"></script>
+  <script type="module" crossorigin src="/poncho/assets/index-QiXJkuU2.js"></script>
 </head>
 <body>
   <div id="hud"></div>

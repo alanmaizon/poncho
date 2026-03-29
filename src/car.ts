@@ -22,16 +22,29 @@ export class CarController {
   private raycaster = new THREE.Raycaster();
   private roadMesh: THREE.Mesh | null = null;
   private targetY = 0;
+  private measuredSpeed = 0;
+  private lastSamplePosition = new THREE.Vector2();
+  private currentSamplePosition = new THREE.Vector2();
 
   constructor(mesh: THREE.Group, initialHeading = 0, roadMesh: THREE.Mesh | null = null) {
     this.mesh = mesh;
     this.heading = initialHeading;
     this.roadMesh = roadMesh;
     this.targetY = mesh.position.y;
+    this.lastSamplePosition.set(mesh.position.x, mesh.position.z);
   }
 
   get speedKmh(): number {
-    return Math.abs(this.speed) * 3.6;
+    return this.measuredSpeed * 3.6;
+  }
+
+  sampleSpeed(dt: number) {
+    if (dt <= 0) return;
+
+    this.currentSamplePosition.set(this.mesh.position.x, this.mesh.position.z);
+    this.measuredSpeed =
+      this.currentSamplePosition.distanceTo(this.lastSamplePosition) / dt;
+    this.lastSamplePosition.copy(this.currentSamplePosition);
   }
 
   update(dt: number) {
