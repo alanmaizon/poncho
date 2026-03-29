@@ -9,10 +9,10 @@ import * as THREE from 'three';
 async function main() {
   const { scene, renderer, camera, sun } = initRenderer();
 
-  const { track, car, walls, checkpoints, startLine, spawn } =
+  const { track, car, walls, roadMesh, checkpoints, startLine, spawn } =
     await loadAssets(scene);
 
-  const carController = new CarController(car, spawn.heading);
+  const carController = new CarController(car, spawn.heading, roadMesh);
   const cameraController = new CameraController(camera, car);
   const boundary = new BoundarySystem(walls, car);
 
@@ -28,12 +28,12 @@ async function main() {
     cameraController.update(dt);
     updateHud(carController);
 
-    // Keep shadow camera centered on the car for crisp nearby shadows
+    // Keep shadow camera centered on the car
     sun.target.position.copy(car.position);
     sun.target.updateMatrixWorld();
     sun.position.set(
       car.position.x + 60,
-      100,
+      car.position.y + 100,
       car.position.z + 40
     );
 

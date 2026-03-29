@@ -6,10 +6,7 @@ const RAY_COUNT = 12;
 
 /**
  * Wall-mesh collision with position rollback.
- * Saves the last safe position each frame. If rays detect penetration,
- * the car is pushed out along the wall normal. If it still ends up
- * inside geometry (multiple walls / corner), it snaps back to the
- * last known safe position instead of glitching through.
+ * Rays originate at the car's current Y (elevation-aware for bridges).
  */
 export class BoundarySystem {
   private car: THREE.Object3D;
@@ -28,7 +25,6 @@ export class BoundarySystem {
       wall.updateMatrixWorld(true);
     }
 
-    // Radial ray directions in XZ plane
     for (let i = 0; i < RAY_COUNT; i++) {
       const angle = (i / RAY_COUNT) * Math.PI * 2;
       this.rayDirections.push(
@@ -39,13 +35,13 @@ export class BoundarySystem {
 
   constrain(carController: { speed: number; heading: number }) {
     const pos = this.car.position;
-    const origin = new THREE.Vector3(pos.x, pos.y + 0.5, pos.z);
+    // Use car's actual Y so rays hit walls at the correct elevation
+    const origin = new THREE.Vector3(pos.x, pos.y + 1.0, pos.z);
 
     let collided = false;
     let totalPushX = 0;
     let totalPushZ = 0;
 
-    // First pass: detect all wall penetrations and accumulate push vectors
     for (const dir of this.rayDirections) {
       this.raycaster.set(origin, dir);
       this.raycaster.far = CAR_RADIUS;
@@ -70,12 +66,11 @@ export class BoundarySystem {
     }
 
     if (collided) {
-      // Apply accumulated push
       pos.x += totalPushX;
       pos.z += totalPushZ;
 
-      // Verify we're actually clear now — re-check from pushed position
-      const verifyOrigin = new THREE.Vector3(pos.x, pos.y + 0.5, pos.z);
+      // Verify push cleared the collision
+      const verifyOrigin = new THREE.Vector3(pos.x, pos.y + 1.0, pos.z);
       let stillInside = false;
       for (const dir of this.rayDirections) {
         this.raycaster.set(verifyOrigin, dir);
@@ -88,21 +83,18 @@ export class BoundarySystem {
       }
 
       if (stillInside && this.hasSafePos) {
-        // Push didn't work (corner / wedge) — rollback to last safe position
         pos.copy(this.lastSafePos);
         carController.heading = this.lastSafeHeading;
         carController.speed = 0;
       } else {
-        // Push worked — dampen speed based on how hard the hit was
         const pushMag = Math.sqrt(totalPushX * totalPushX + totalPushZ * totalPushZ);
         if (pushMag > 0.3) {
-          carController.speed *= 0.1; // hard hit
+          carController.speed *= 0.1;
         } else {
-          carController.speed *= 0.7; // scrape
+          carController.speed *= 0.7;
         }
       }
     } else {
-      // No collision — save as safe position
       this.lastSafePos.copy(pos);
       this.lastSafeHeading = carController.heading;
       this.hasSafePos = true;

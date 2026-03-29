@@ -5,13 +5,13 @@ export function initRenderer() {
 
   // Sky gradient via hemisphere background
   scene.background = new THREE.Color(0x7ec8e3);
-  scene.fog = new THREE.FogExp2(0x9dc8d6, 0.0025);
+  scene.fog = new THREE.FogExp2(0x9dc8d6, 0.0012);
 
   const camera = new THREE.PerspectiveCamera(
     55,
     window.innerWidth / window.innerHeight,
     0.3,
-    1200
+    2000
   );
   camera.position.set(0, 10, 20);
 
@@ -48,7 +48,7 @@ export function initRenderer() {
   sun.shadow.camera.top = 150;
   sun.shadow.camera.bottom = -150;
   sun.shadow.camera.near = 1;
-  sun.shadow.camera.far = 400;
+  sun.shadow.camera.far = 500;
   sun.shadow.bias = -0.0003;
   sun.shadow.normalBias = 0.02;
   scene.add(sun);
@@ -60,7 +60,7 @@ export function initRenderer() {
 
   // Ground plane (visible beyond the track's own ground mesh)
   const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(2000, 2000),
+    new THREE.PlaneGeometry(4000, 4000),
     new THREE.MeshStandardMaterial({
       color: 0x3b7a3e,
       roughness: 0.95,

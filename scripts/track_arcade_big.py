@@ -34,7 +34,7 @@ ROAD_Z = 0.0
 WALL_HEIGHT = 2.6
 WALL_THICKNESS = 0.6
 
-GROUND_MARGIN = 60.0
+GROUND_MARGIN = 80.0
 GROUND_Z = -0.08
 
 CURVE_SAMPLES = 360
@@ -58,13 +58,23 @@ STRIPE_HEIGHT = 0.03
 STRIPE_LENGTH = 2.0
 STRIPE_STEP = 4
 
-# trees
-TREE_COUNT = 84
-TREE_CLEARANCE = 9.0
-TREE_JITTER = 8.0
-TREE_SEED = 11
-TREE_MIN_SCALE = 1.1
-TREE_MAX_SCALE = 1.9
+# forest
+TREE_SEED = 42
+TREE_CLEARANCE = 7.0       # min distance from road edge
+
+# inner ring — visible trees near the track
+INNER_TREE_COUNT = 120
+INNER_JITTER = 12.0
+
+# outer ring — dense forest backdrop
+OUTER_TREE_COUNT = 280
+OUTER_MIN_DIST = 20.0
+OUTER_MAX_DIST = 55.0
+
+# bushes — low ground cover
+BUSH_COUNT = 90
+BUSH_CLEARANCE = 5.0
+BUSH_JITTER = 18.0
 
 # Closed control points for an arcade-style track.
 BASE_TRACK_CONTROL_POINTS = [
@@ -464,19 +474,24 @@ def build_center_stripes(centerline, tangents, left_normals, collection, materia
 
     return objs
 
-def create_tree(name, location, scale, collection, trunk_material, leaves_material):
+# ---------------------------------
+# realistic tree species
+# ---------------------------------
+
+def create_deciduous_tree(name, location, scale, collection, trunk_mat, canopy_mats):
+    """Broad-leaf tree: tapered trunk + cluster of overlapping icospheres for canopy."""
     x, y, z = location
+    rng = random.Random(hash(name))
 
-    trunk_h = 3.2 * scale
-    trunk_r = 0.24 * scale
-    crown1_h = 3.6 * scale
-    crown1_r = 1.9 * scale
-    crown2_h = 2.8 * scale
-    crown2_r = 1.3 * scale
+    trunk_h = rng.uniform(4.0, 6.0) * scale
+    trunk_r_base = 0.30 * scale
+    trunk_r_top = 0.12 * scale
 
-    bpy.ops.mesh.primitive_cylinder_add(
-        vertices=8,
-        radius=trunk_r,
+    # Tapered trunk (two-segment cylinder approximation)
+    bpy.ops.mesh.primitive_cone_add(
+        vertices=10,
+        radius1=trunk_r_base,
+        radius2=trunk_r_top,
         depth=trunk_h,
         location=(x, y, z + trunk_h * 0.5),
     )
@@ -484,69 +499,222 @@ def create_tree(name, location, scale, collection, trunk_material, leaves_materi
     trunk.name = f"{name}_Trunk"
     relink_object(trunk, collection)
     trunk.data.materials.clear()
-    trunk.data.materials.append(trunk_material)
+    trunk.data.materials.append(trunk_mat)
+
+    # Canopy: 3-5 overlapping icospheres at varying offsets
+    canopy_count = rng.randint(3, 5)
+    canopy_base_z = z + trunk_h * 0.75
+    canopy_r = rng.uniform(2.2, 3.2) * scale
+
+    for ci in range(canopy_count):
+        ox = rng.uniform(-1.0, 1.0) * scale
+        oy = rng.uniform(-1.0, 1.0) * scale
+        oz = rng.uniform(0.0, 2.0) * scale
+        r = canopy_r * rng.uniform(0.6, 1.0)
+
+        bpy.ops.mesh.primitive_ico_sphere_add(
+            subdivisions=2,
+            radius=r,
+            location=(x + ox, y + oy, canopy_base_z + oz),
+        )
+        sphere = bpy.context.active_object
+        sphere.name = f"{name}_Canopy{ci}"
+        relink_object(sphere, collection)
+        sphere.data.materials.clear()
+        sphere.data.materials.append(rng.choice(canopy_mats))
+
+        # Slight random squash/stretch for organic feel
+        sphere.scale.z = rng.uniform(0.7, 1.0)
+        sphere.scale.x = rng.uniform(0.85, 1.15)
+        sphere.scale.y = rng.uniform(0.85, 1.15)
+
+
+def create_pine_tree(name, location, scale, collection, trunk_mat, canopy_mats):
+    """Conifer: tall narrow trunk + 3-4 layered cones getting smaller toward the top."""
+    x, y, z = location
+    rng = random.Random(hash(name))
+
+    trunk_h = rng.uniform(5.0, 8.0) * scale
+    trunk_r = 0.20 * scale
 
     bpy.ops.mesh.primitive_cone_add(
-        vertices=7,
-        radius1=crown1_r,
-        radius2=0.0,
-        depth=crown1_h,
-        location=(x, y, z + trunk_h + crown1_h * 0.5 - 0.2 * scale),
+        vertices=8,
+        radius1=trunk_r * 1.3,
+        radius2=trunk_r * 0.6,
+        depth=trunk_h,
+        location=(x, y, z + trunk_h * 0.5),
     )
-    crown1 = bpy.context.active_object
-    crown1.name = f"{name}_CrownA"
-    relink_object(crown1, collection)
-    crown1.data.materials.clear()
-    crown1.data.materials.append(leaves_material)
+    trunk = bpy.context.active_object
+    trunk.name = f"{name}_Trunk"
+    relink_object(trunk, collection)
+    trunk.data.materials.clear()
+    trunk.data.materials.append(trunk_mat)
 
-    bpy.ops.mesh.primitive_cone_add(
-        vertices=7,
-        radius1=crown2_r,
-        radius2=0.0,
-        depth=crown2_h,
-        location=(x, y, z + trunk_h + crown1_h * 0.75),
-    )
-    crown2 = bpy.context.active_object
-    crown2.name = f"{name}_CrownB"
-    relink_object(crown2, collection)
-    crown2.data.materials.clear()
-    crown2.data.materials.append(leaves_material)
+    # Layered cone tiers
+    tier_count = rng.randint(3, 4)
+    tier_start = z + trunk_h * 0.3
+    tier_span = trunk_h * 0.85
 
-def scatter_trees(centerline, left_normals, road_width, count, collection, trunk_material, leaves_material):
+    for ti in range(tier_count):
+        frac = ti / tier_count
+        tier_z = tier_start + frac * tier_span
+        tier_r = (2.5 - frac * 1.8) * scale * rng.uniform(0.85, 1.1)
+        tier_h = (3.0 - frac * 1.2) * scale * rng.uniform(0.8, 1.1)
+
+        bpy.ops.mesh.primitive_cone_add(
+            vertices=8,
+            radius1=tier_r,
+            radius2=0.0,
+            depth=tier_h,
+            location=(x, y, tier_z + tier_h * 0.3),
+        )
+        cone = bpy.context.active_object
+        cone.name = f"{name}_Tier{ti}"
+        relink_object(cone, collection)
+        cone.data.materials.clear()
+        cone.data.materials.append(rng.choice(canopy_mats))
+
+
+def create_bush(name, location, scale, collection, canopy_mats):
+    """Low bush: 2-3 squashed spheres on the ground."""
+    x, y, z = location
+    rng = random.Random(hash(name))
+
+    count = rng.randint(2, 3)
+    for bi in range(count):
+        ox = rng.uniform(-0.6, 0.6) * scale
+        oy = rng.uniform(-0.6, 0.6) * scale
+        r = rng.uniform(0.8, 1.5) * scale
+
+        bpy.ops.mesh.primitive_ico_sphere_add(
+            subdivisions=2,
+            radius=r,
+            location=(x + ox, y + oy, z + r * 0.4),
+        )
+        sphere = bpy.context.active_object
+        sphere.name = f"{name}_Part{bi}"
+        relink_object(sphere, collection)
+        sphere.data.materials.clear()
+        sphere.data.materials.append(rng.choice(canopy_mats))
+        sphere.scale.z = rng.uniform(0.45, 0.65)
+        sphere.scale.x = rng.uniform(0.9, 1.2)
+        sphere.scale.y = rng.uniform(0.9, 1.2)
+
+
+def scatter_forest(centerline, left_normals, road_width, collection,
+                   trunk_mat, canopy_mats, bush_mats):
+    """Place inner trees, outer forest ring, and ground bushes."""
     random.seed(TREE_SEED)
     n = len(centerline)
+    edge_offset = road_width * 0.5 + CURB_WIDTH + WALL_THICKNESS
+    placed_positions = []
 
-    start_idx = int(START_LINE_FRACTION * n) % n
+    def too_close(loc, min_dist=3.0):
+        for p in placed_positions:
+            if (loc - p).length < min_dist:
+                return True
+        return False
 
-    placed = 0
-    attempts = 0
+    def place_near_track(count, clearance, jitter, prefix, creator, creator_kwargs):
+        placed = 0
+        attempts = 0
+        while placed < count and attempts < count * 15:
+            attempts += 1
+            idx = random.randrange(n)
+            side = random.choice([-1.0, 1.0])
+            normal = left_normals[idx] * side
+            dist = edge_offset + clearance + random.uniform(0, jitter)
+            loc = centerline[idx] + normal * dist
+            loc_2d = Vector((loc.x, loc.y, 0))
 
-    while placed < count and attempts < count * 12:
-        attempts += 1
+            if too_close(loc_2d, min_dist=3.5):
+                continue
+
+            scale = random.uniform(0.8, 1.6)
+            creator(
+                name=f"{prefix}_{placed:03d}",
+                location=(loc.x, loc.y, ROAD_Z),
+                scale=scale,
+                **creator_kwargs,
+            )
+            placed_positions.append(loc_2d)
+            placed += 1
+
+    # Compute track center for outer ring placement
+    cx = sum(p.x for p in centerline) / n
+    cy = sum(p.y for p in centerline) / n
+    track_center = Vector((cx, cy, 0))
+
+    # --- Inner trees (near track, visible up close) ---
+    place_near_track(
+        count=INNER_TREE_COUNT,
+        clearance=TREE_CLEARANCE,
+        jitter=INNER_JITTER,
+        prefix="Tree",
+        creator=lambda **kw: (
+            create_deciduous_tree(**kw, collection=collection, trunk_mat=trunk_mat, canopy_mats=canopy_mats)
+            if random.random() < 0.55
+            else create_pine_tree(**kw, collection=collection, trunk_mat=trunk_mat, canopy_mats=canopy_mats)
+        ),
+        creator_kwargs={},
+    )
+
+    # --- Outer forest ring (dense backdrop) ---
+    outer_placed = 0
+    outer_attempts = 0
+    while outer_placed < OUTER_TREE_COUNT and outer_attempts < OUTER_TREE_COUNT * 15:
+        outer_attempts += 1
+        # Random angle around track center
+        angle = random.uniform(0, math.pi * 2)
+        dist = random.uniform(OUTER_MIN_DIST, OUTER_MAX_DIST)
+
+        # Pick a random track point and go outward from there
         idx = random.randrange(n)
-
-        wrapped = min((idx - start_idx) % n, (start_idx - idx) % n)
-        if wrapped < n * 0.05:
-            continue
-
         side = random.choice([-1.0, 1.0])
         normal = left_normals[idx] * side
+        loc = centerline[idx] + normal * (edge_offset + dist)
+        loc_2d = Vector((loc.x, loc.y, 0))
 
-        base = centerline[idx] + normal * (road_width * 0.5 + CURB_WIDTH + WALL_THICKNESS + TREE_CLEARANCE)
-        jitter = normal * random.uniform(0.0, TREE_JITTER)
-        loc = base + jitter
+        if too_close(loc_2d, min_dist=2.5):
+            continue
 
-        scale = random.uniform(TREE_MIN_SCALE, TREE_MAX_SCALE)
+        scale = random.uniform(1.0, 2.2)
+        if random.random() < 0.45:
+            create_pine_tree(
+                name=f"ForestPine_{outer_placed:03d}",
+                location=(loc.x, loc.y, ROAD_Z),
+                scale=scale,
+                collection=collection,
+                trunk_mat=trunk_mat,
+                canopy_mats=canopy_mats,
+            )
+        else:
+            create_deciduous_tree(
+                name=f"ForestTree_{outer_placed:03d}",
+                location=(loc.x, loc.y, ROAD_Z),
+                scale=scale,
+                collection=collection,
+                trunk_mat=trunk_mat,
+                canopy_mats=canopy_mats,
+            )
+        placed_positions.append(loc_2d)
+        outer_placed += 1
 
-        create_tree(
-            name=f"Tree_{placed:03d}",
-            location=(loc.x, loc.y, ROAD_Z),
-            scale=scale,
+    # --- Bushes (ground cover near track) ---
+    place_near_track(
+        count=BUSH_COUNT,
+        clearance=BUSH_CLEARANCE,
+        jitter=BUSH_JITTER,
+        prefix="Bush",
+        creator=lambda **kw: create_bush(
+            name=kw['name'],
+            location=kw['location'],
+            scale=kw['scale'],
             collection=collection,
-            trunk_material=trunk_material,
-            leaves_material=leaves_material,
-        )
-        placed += 1
+            canopy_mats=bush_mats,
+        ),
+        creator_kwargs={},
+    )
 
 def export_selected(filepath):
     ext = os.path.splitext(filepath)[1].lower()
@@ -641,19 +809,53 @@ stripe_mat = make_material("Stripe_Mat",
 
 # Tree bark: warm brown, very rough
 trunk_mat = make_material("Trunk_Mat",
-    color=(0.18, 0.10, 0.04, 1.0),
+    color=(0.14, 0.08, 0.03, 1.0),
     roughness=1.0,
+    metallic=0.0,
+    specular=0.05,
+)
+
+# Foliage: multiple greens for variety
+canopy_dark = make_material("Canopy_Dark",
+    color=(0.06, 0.22, 0.05, 1.0),
+    roughness=0.92,
     metallic=0.0,
     specular=0.1,
 )
-
-# Foliage: varied green, rough
-leaves_mat = make_material("Leaves_Mat",
+canopy_mid = make_material("Canopy_Mid",
     color=(0.10, 0.30, 0.08, 1.0),
+    roughness=0.88,
+    metallic=0.0,
+    specular=0.12,
+)
+canopy_light = make_material("Canopy_Light",
+    color=(0.15, 0.35, 0.10, 1.0),
+    roughness=0.85,
+    metallic=0.0,
+    specular=0.14,
+)
+canopy_yellow = make_material("Canopy_Yellow",
+    color=(0.22, 0.34, 0.06, 1.0),
     roughness=0.90,
     metallic=0.0,
-    specular=0.15,
+    specular=0.10,
 )
+canopy_mats = [canopy_dark, canopy_mid, canopy_light, canopy_yellow]
+
+# Bush foliage: slightly different tones
+bush_dark = make_material("Bush_Dark",
+    color=(0.08, 0.20, 0.06, 1.0),
+    roughness=0.95,
+    metallic=0.0,
+    specular=0.08,
+)
+bush_light = make_material("Bush_Light",
+    color=(0.14, 0.28, 0.08, 1.0),
+    roughness=0.92,
+    metallic=0.0,
+    specular=0.10,
+)
+bush_mats = [bush_dark, bush_light, canopy_dark]
 
 raw_curve = sample_closed_catmull_rom(TRACK_CONTROL_POINTS, samples_per_segment=36)
 centerline = resample_closed_polyline(raw_curve, CURVE_SAMPLES)
@@ -732,14 +934,14 @@ for idx, fraction in enumerate(CHECKPOINT_FRACTIONS, start=1):
     )
     checkpoints.append(cp)
 
-scatter_trees(
+scatter_forest(
     centerline=centerline,
     left_normals=left_normals,
     road_width=ROAD_WIDTH,
-    count=TREE_COUNT,
     collection=collection,
-    trunk_material=trunk_mat,
-    leaves_material=leaves_mat,
+    trunk_mat=trunk_mat,
+    canopy_mats=canopy_mats,
+    bush_mats=bush_mats,
 )
 
 # ---------------------------------
