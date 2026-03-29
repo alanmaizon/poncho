@@ -75,8 +75,14 @@ export class CarController {
 
       const hits = this.raycaster.intersectObject(this.roadMesh, false);
       if (hits.length > 0) {
-        // Use the closest hit that's roughly at or below our current height
-        this.targetY = hits[0].point.y;
+        // At the figure-8 crossing, the downward ray can hit both road levels.
+        // Follow the surface nearest to the car's current elevation instead.
+        const nearestSurface = hits.reduce((best, hit) => {
+          const bestDelta = Math.abs(best.point.y - pos.y);
+          const hitDelta = Math.abs(hit.point.y - pos.y);
+          return hitDelta < bestDelta ? hit : best;
+        });
+        this.targetY = nearestSurface.point.y;
       }
 
       // Smooth interpolation to target height

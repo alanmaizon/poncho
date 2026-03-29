@@ -58,17 +58,17 @@ export function initRenderer() {
   fill.position.set(-40, 30, -50);
   scene.add(fill);
 
-  // Ground plane (visible beyond the track's own ground mesh)
+  // Low fallback ground so the sculpted terrain can carry the foreground.
   const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(4000, 4000),
+    new THREE.CircleGeometry(3200, 48),
     new THREE.MeshStandardMaterial({
-      color: 0x3b7a3e,
-      roughness: 0.95,
+      color: 0x556446,
+      roughness: 1.0,
       metalness: 0.0,
     })
   );
   ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -0.1;
+  ground.position.y = -35;
   ground.receiveShadow = true;
   scene.add(ground);
 

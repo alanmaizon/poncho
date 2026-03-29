@@ -40,9 +40,16 @@ BRIDGE_SUPPORT_W = 0.8
 BRIDGE_DECK_THICK = 0.4
 BRIDGE_MIN_Z = 3.0                 # only add supports where Z > this
 
-# ground
-GROUND_MARGIN = 100.0
+# terrain / ground
 GROUND_Z = -0.08
+TERRAIN_MARGIN = 180.0
+TERRAIN_GRID_X = 180
+TERRAIN_GRID_Y = 180
+TERRAIN_SHOULDER_PAD = 10.0
+TERRAIN_BLEND = 80.0
+TERRAIN_BERM_HEIGHT = 2.8
+TERRAIN_BERM_OFFSET = 24.0
+TERRAIN_BERM_WIDTH = 18.0
 
 # curve sampling
 CURVE_SAMPLES = 720
@@ -254,6 +261,94 @@ def compute_frames(centerline):
         left_normals.append(lft)
     return tangents, left_normals
 
+def signed_area_2d(a, b, p):
+    return (b.x - a.x) * (p.y - a.y) - (p.x - a.x) * (b.y - a.y)
+
+def winding_number_2d(point, polygon):
+    winding = 0
+    n = len(polygon)
+    for i in range(n):
+        a = polygon[i]
+        b = polygon[(i + 1) % n]
+        if a.y <= point.y:
+            if b.y > point.y and signed_area_2d(a, b, point) > 0:
+                winding += 1
+        else:
+            if b.y <= point.y and signed_area_2d(a, b, point) < 0:
+                winding -= 1
+    return winding
+
+def min_distance_to_polyline(point, polyline):
+    best = float("inf")
+    n = len(polyline)
+    for i in range(n):
+        a = polyline[i]
+        b = polyline[(i + 1) % n]
+        ab = b - a
+        denom = ab.length_squared
+        if denom == 0:
+            dist = (point - a).length
+        else:
+            t = max(0.0, min(1.0, (point - a).dot(ab) / denom))
+            proj = a + ab * t
+            dist = (point - proj).length
+        if dist < best:
+            best = dist
+    return best
+
+def smoothstep(edge0, edge1, value):
+    if edge0 == edge1:
+        return 0.0 if value < edge0 else 1.0
+    t = max(0.0, min(1.0, (value - edge0) / (edge1 - edge0)))
+    return t * t * (3.0 - 2.0 * t)
+
+def terrain_macro_height(point, track_bounds):
+    min_x, max_x, min_y, max_y = track_bounds
+    span_x = max_x - min_x
+    span_y = max_y - min_y
+    max_span = max(span_x, span_y)
+    x, y = point.x, point.y
+
+    waves = (
+        1.6 * math.sin(x * 0.0075)
+        + 1.3 * math.cos(y * 0.0060)
+        + 0.9 * math.sin((x + y) * 0.0042)
+    )
+
+    hills = 0.0
+    hill_specs = [
+        (min_x - 0.18 * span_x, max_y + 0.15 * span_y, 11.0, max_span * 0.32),
+        (max_x + 0.12 * span_x, max_y + 0.08 * span_y, 8.0, max_span * 0.28),
+        (max_x + 0.10 * span_x, min_y - 0.18 * span_y, 10.0, max_span * 0.30),
+        (min_x - 0.20 * span_x, min_y - 0.10 * span_y, 9.0, max_span * 0.34),
+        ((min_x + max_x) * 0.5, min_y - 0.26 * span_y, 5.0, max_span * 0.36),
+    ]
+    for hx, hy, height, radius in hill_specs:
+        dist_sq = (x - hx) ** 2 + (y - hy) ** 2
+        hills += height * math.exp(-dist_sq / (radius * radius))
+
+    basin = -2.2 * math.exp(
+        -(x * x + (y * 0.85) ** 2) / ((max_span * 0.24) ** 2)
+    )
+    return waves + hills + basin
+
+def terrain_height_at(point, flat_centerline, track_bounds):
+    road_dist = min_distance_to_polyline(point, flat_centerline)
+    terrain_clearance = ROAD_WIDTH * 0.5 + CURB_W + WALL_THICKNESS + TERRAIN_SHOULDER_PAD
+    corridor = smoothstep(
+        terrain_clearance,
+        terrain_clearance + TERRAIN_BLEND,
+        road_dist
+    )
+    berm = TERRAIN_BERM_HEIGHT * math.exp(
+        -((road_dist - (terrain_clearance + TERRAIN_BERM_OFFSET)) / TERRAIN_BERM_WIDTH) ** 2
+    )
+    shoulder = -0.25 * math.exp(
+        -((road_dist - terrain_clearance * 0.85) / 8.0) ** 2
+    )
+    macro = terrain_macro_height(point, track_bounds)
+    return GROUND_Z + shoulder + berm * corridor + macro * corridor
+
 # =============================================================================
 #  GEOMETRY BUILDERS
 # =============================================================================
@@ -288,11 +383,35 @@ def build_wall(edge_pts, offset_dirs, thickness, height, name, collection, mater
         faces.append([i1+i, i1+j, i0+j, i0+i])
     return add_mesh_object(name, verts, faces, collection, material)
 
-def build_ground(size_x, size_y, z, collection, material):
-    hx, hy = size_x * 0.5, size_y * 0.5
-    verts = [Vector((-hx,-hy,z)), Vector((hx,-hy,z)),
-             Vector((hx,hy,z)), Vector((-hx,hy,z))]
-    return add_mesh_object("Ground", verts, [[0,1,2,3]], collection, material)
+def build_terrain(min_x, max_x, min_y, max_y,
+                  flat_centerline, track_bounds, collection, material):
+    verts, faces = [], []
+    size_x = max_x - min_x
+    size_y = max_y - min_y
+
+    for iy in range(TERRAIN_GRID_Y + 1):
+        fy = iy / TERRAIN_GRID_Y
+        y = min_y + size_y * fy
+        for ix in range(TERRAIN_GRID_X + 1):
+            fx = ix / TERRAIN_GRID_X
+            x = min_x + size_x * fx
+            point = Vector((x, y, 0.0))
+            z = terrain_height_at(point, flat_centerline, track_bounds)
+            verts.append(Vector((x, y, z)))
+
+    stride = TERRAIN_GRID_X + 1
+    for iy in range(TERRAIN_GRID_Y):
+        for ix in range(TERRAIN_GRID_X):
+            a = iy * stride + ix
+            b = a + 1
+            d = (iy + 1) * stride + ix
+            c = d + 1
+            faces.append([a, b, c, d])
+
+    terrain = add_mesh_object("Ground", verts, faces, collection, material)
+    for poly in terrain.data.polygons:
+        poly.use_smooth = True
+    return terrain
 
 def add_oriented_box(name, center, ax_x, ax_y, ax_z,
                      sx, sy, sz, collection, material=None):
@@ -383,7 +502,8 @@ def build_center_stripes(centerline, tangents, left_normals, col, mat):
 #  BRIDGE SUPPORTS  (vertical columns under elevated road)
 # =============================================================================
 
-def build_bridge_supports(centerline, left_normals, rw, col, mat):
+def build_bridge_supports(centerline, left_normals, rw,
+                          flat_centerline, track_bounds, col, mat):
     objs = []
     n = len(centerline)
     half_w = rw * 0.5
@@ -399,11 +519,14 @@ def build_bridge_supports(centerline, left_normals, rw, col, mat):
 
         for side in [1.0, -1.0]:
             base_xy = c + lft * (half_w * side * 0.85)
-            col_center = Vector((base_xy.x, base_xy.y, z * 0.5))
+            base_point = Vector((base_xy.x, base_xy.y, 0.0))
+            base_z = terrain_height_at(base_point, flat_centerline, track_bounds)
+            support_h = max(0.2, z - base_z)
+            col_center = Vector((base_xy.x, base_xy.y, base_z + support_h * 0.5))
             objs.append(add_oriented_box(
                 f"BridgeSupport_{i:03d}_{'L' if side>0 else 'R'}",
                 col_center, tangent, lft, up,
-                BRIDGE_SUPPORT_W, BRIDGE_SUPPORT_W, z,
+                BRIDGE_SUPPORT_W, BRIDGE_SUPPORT_W, support_h,
                 col, mat))
     return objs
 
@@ -518,7 +641,8 @@ def create_bush(name, location, scale, col, bush_mats):
 #  FOREST SCATTER
 # =============================================================================
 
-def scatter_forest(centerline, left_normals, rw, col,
+def scatter_forest(centerline, left_normals, rw,
+                   flat_centerline, track_bounds, col,
                    trunk_mat, canopy_mats, bush_mats):
     random.seed(TREE_SEED)
     n = len(centerline)
@@ -534,6 +658,12 @@ def scatter_forest(centerline, left_normals, rw, col,
     def near_crossing(loc):
         return Vector((loc.x, loc.y)).length < CROSSING_EXCL
 
+    def inside_track(loc):
+        return winding_number_2d(loc, flat_centerline) != 0
+
+    def too_close_to_any_road(loc, clearance):
+        return min_distance_to_polyline(loc, flat_centerline) < edge_off + clearance
+
     def rand_loc(idx, clearance, jitter):
         side = random.choice([-1.0, 1.0])
         normal = left_normals[idx] * side
@@ -548,10 +678,19 @@ def scatter_forest(centerline, left_normals, rw, col,
             break
         idx = random.randrange(n)
         loc = rand_loc(idx, TREE_CLEAR, INNER_JITTER)
-        if too_close(loc) or near_crossing(loc):
+        if (
+            too_close(loc)
+            or near_crossing(loc)
+            or inside_track(loc)
+            or too_close_to_any_road(loc, TREE_CLEAR)
+        ):
             continue
         s = random.uniform(0.8, 1.6)
-        xy = (loc.x, loc.y, 0)
+        xy = (
+            loc.x,
+            loc.y,
+            terrain_height_at(loc, flat_centerline, track_bounds)
+        )
         if random.random() < 0.55:
             create_deciduous_tree(f"Tree_{placed:03d}", xy, s, col, trunk_mat, canopy_mats)
         else:
@@ -566,10 +705,19 @@ def scatter_forest(centerline, left_normals, rw, col,
             break
         idx = random.randrange(n)
         loc = rand_loc(idx, OUTER_MIN, OUTER_MAX - OUTER_MIN)
-        if too_close(loc, 2.5) or near_crossing(loc):
+        if (
+            too_close(loc, 2.5)
+            or near_crossing(loc)
+            or inside_track(loc)
+            or too_close_to_any_road(loc, OUTER_MIN)
+        ):
             continue
         s = random.uniform(1.0, 2.2)
-        xy = (loc.x, loc.y, 0)
+        xy = (
+            loc.x,
+            loc.y,
+            terrain_height_at(loc, flat_centerline, track_bounds)
+        )
         if random.random() < 0.45:
             create_pine_tree(f"Forest_{placed:03d}", xy, s, col, trunk_mat, canopy_mats)
         else:
@@ -584,10 +732,25 @@ def scatter_forest(centerline, left_normals, rw, col,
             break
         idx = random.randrange(n)
         loc = rand_loc(idx, BUSH_CLEAR, BUSH_JITTER)
-        if too_close(loc, 2.0) or near_crossing(loc):
+        if (
+            too_close(loc, 2.0)
+            or near_crossing(loc)
+            or inside_track(loc)
+            or too_close_to_any_road(loc, BUSH_CLEAR)
+        ):
             continue
         s = random.uniform(0.6, 1.2)
-        create_bush(f"Bush_{placed:03d}", (loc.x, loc.y, 0), s, col, bush_mats)
+        create_bush(
+            f"Bush_{placed:03d}",
+            (
+                loc.x,
+                loc.y,
+                terrain_height_at(loc, flat_centerline, track_bounds)
+            ),
+            s,
+            col,
+            bush_mats
+        )
         positions.append(loc)
         placed += 1
 
@@ -642,6 +805,13 @@ for i, pt in enumerate(flat_cl):
     centerline.append(Vector((pt.x, pt.y, z)))
 
 tangents, left_normals = compute_frames(centerline)
+flat_centerline = [Vector((p.x, p.y, 0.0)) for p in centerline]
+track_bounds = (
+    min(p.x for p in flat_centerline),
+    max(p.x for p in flat_centerline),
+    min(p.y for p in flat_centerline),
+    max(p.y for p in flat_centerline),
+)
 
 # ---------- edges ----------
 half_w = ROAD_WIDTH * 0.5
@@ -663,14 +833,17 @@ build_curbs(centerline, tangents, left_normals, ROAD_WIDTH, collection, curb_red
 # ---------- stripes ----------
 build_center_stripes(centerline, tangents, left_normals, collection, stripe_mat)
 
-# ---------- ground ----------
-xs = [p.x for p in centerline]; ys = [p.y for p in centerline]
-gw = (max(xs)-min(xs)) + 2*(GROUND_MARGIN + ROAD_WIDTH)
-gh = (max(ys)-min(ys)) + 2*(GROUND_MARGIN + ROAD_WIDTH)
-gcx, gcy = (max(xs)+min(xs))*0.5, (max(ys)+min(ys))*0.5
-ground = build_ground(gw, gh, GROUND_Z, collection, ground_mat)
-ground.location.x = gcx
-ground.location.y = gcy
+# ---------- terrain ----------
+ground = build_terrain(
+    track_bounds[0] - TERRAIN_MARGIN,
+    track_bounds[1] + TERRAIN_MARGIN,
+    track_bounds[2] - TERRAIN_MARGIN,
+    track_bounds[3] + TERRAIN_MARGIN,
+    flat_centerline,
+    track_bounds,
+    collection,
+    ground_mat
+)
 
 # ---------- start line ----------
 build_start_line(centerline, tangents, left_normals, START_FRAC, ROAD_WIDTH, collection, start_mat)
@@ -680,13 +853,22 @@ for idx, frac in enumerate(CP_FRACS, start=1):
     build_checkpoint(centerline, tangents, left_normals, idx, frac, ROAD_WIDTH, collection, cp_mat)
 
 # ---------- bridge supports ----------
-build_bridge_supports(centerline, left_normals, ROAD_WIDTH, collection, support_mat)
+build_bridge_supports(
+    centerline,
+    left_normals,
+    ROAD_WIDTH,
+    flat_centerline,
+    track_bounds,
+    collection,
+    support_mat
+)
 
 # ---------- bridge deck underside ----------
 build_bridge_deck(centerline, left_normals, ROAD_WIDTH, collection, deck_mat)
 
 # ---------- forest ----------
-scatter_forest(centerline, left_normals, ROAD_WIDTH, collection,
+scatter_forest(centerline, left_normals, ROAD_WIDTH,
+               flat_centerline, track_bounds, collection,
                trunk_mat, canopy_mats, bush_mats)
 
 # ---------- export ----------
